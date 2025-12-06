@@ -525,6 +525,12 @@ timeScaleInput.addEventListener('input', () => {
   updateTimeScaleFromSlider();
 });
 
+// Drag constants
+const dragCoeff = 2.2; // Drag coefficient (typical for satellites)
+const crossSectionalArea = 10; // Cross-sectional area in m² (assumed for small satellite)
+const rho0 = 1.225; // Sea-level atmospheric density in kg/m³
+const scaleHeight = 8500; // Atmospheric scale height in meters
+
 function step(dt) {
   const r = Math.hypot(state.pos.x, state.pos.y);
   
@@ -542,8 +548,25 @@ function step(dt) {
   }
   
   const accelGrav = -G * earthMass / (r * r);
-  const ax = accelGrav * (state.pos.x / r) + thrust.x;
-  const ay = accelGrav * (state.pos.y / r) + thrust.y;
+  
+  // Calculate atmospheric drag
+  const altitude = r - earthRadius; // Altitude in meters
+  const rho = rho0 * Math.exp(-altitude / scaleHeight); // Exponential atmosphere density
+  const vMag = Math.hypot(state.vel.x, state.vel.y); // Velocity magnitude
+  const mass = getCurrentMass(); // Current satellite mass
+  
+  let dragAx = 0;
+  let dragAy = 0;
+  if (vMag > 0) {
+    const dragMagnitude = 0.5 * dragCoeff * rho * vMag * vMag * (crossSectionalArea / mass);
+    const vHatX = state.vel.x / vMag; // Unit vector x-component
+    const vHatY = state.vel.y / vMag; // Unit vector y-component
+    dragAx = -dragMagnitude * vHatX; // Drag acceleration opposes velocity
+    dragAy = -dragMagnitude * vHatY;
+  }
+  
+  const ax = accelGrav * (state.pos.x / r) + thrust.x + dragAx;
+  const ay = accelGrav * (state.pos.y / r) + thrust.y + dragAy;
   state.vel.x += ax * dt;
   state.vel.y += ay * dt;
   state.pos.x += state.vel.x * dt;
