@@ -2,6 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Orbital Play</title>
   <link rel="stylesheet" href="./styles.css">
 </head>
@@ -20,42 +21,42 @@
         <div>Vel Status: <span id="velStatus">NOMINAL</span></div>
         <div id="violations" style="display:none; color:#ff9800; font-size:0.8rem;"></div>
       </div>
-      <canvas id="sim" width="700" height="700"></canvas>
+      <canvas id="sim" width="600" height="600"></canvas> <!-- Reduced size for better fit -->
       <div id="controls">
         <button data-thrust="upleft">↖</button><button data-thrust="up">↑</button><button data-thrust="upright">↗</button>
         <button data-thrust="left">←</button><div></div><button data-thrust="right">→</button>
         <button data-thrust="downleft">↙</button><button data-thrust="down">↓</button><button data-thrust="downright">↘</button>
       </div>
       <div id="burnHistory">
-        <h4 style="margin:5px 0; font-size:0.9rem;">Recent Burns</h4>
+        <h4 style="margin:3px 0; font-size:0.85rem;">Recent Burns</h4>
         <div id="burnLog"></div>
       </div>
       
       <!-- AI AUTOPILOT LOG -->
-      <div id="autopilotLog" style="margin:10px; padding:10px; background:#0b142b; border:1px solid #1e2a44; border-radius:6px; max-width:700px; display:none;">
-        <h4 style="margin:5px 0; font-size:0.9rem;">🤖 Autopilot Log</h4>
-        <div id="aiLog" style="max-height:100px; overflow-y:auto; font-size:0.75rem; line-height:1.4; color:#a0d8ff;"></div>
+      <div id="autopilotLog" style="margin:5px 0; padding:8px; background:#0b142b; border:1px solid #1e2a44; border-radius:6px; max-width:100%; display:none;">
+        <h4 style="margin:3px 0; font-size:0.85rem;">🤖 Autopilot Log</h4>
+        <div id="aiLog" style="max-height:80px; overflow-y:auto; font-size:0.7rem; line-height:1.4; color:#a0d8ff;"></div>
       </div>
     </div>
     <aside id="sidebar">
       <h3>Constraints</h3>
-      <div style="display:flex; gap:6px; margin-bottom:10px;">
+      <div style="display:flex; gap:4px; margin-bottom:8px;">
         <button id="modeRealBtn" class="mode-btn active">Real World</button>
         <button id="modeEasyBtn" class="mode-btn">Easy</button>
       </div>
       
       <!-- AI AUTOPILOT CONTROL -->
-      <div style="background:#0f1f3a; border:2px solid #1e2a44; padding:10px; border-radius:6px; margin-bottom:10px;">
-        <h3 style="margin:0 0 8px 0; font-size:0.9rem; color:#00bcd4;">🤖 AI Autopilot</h3>
-        <label style="display:flex; align-items:center; gap:8px; cursor:pointer; font-size:0.85rem;">
-          <input type="checkbox" id="autopilotToggle" style="width:18px; height:18px; cursor:pointer;">
+      <div style="background:#0f1f3a; border:2px solid #1e2a44; padding:8px; border-radius:6px; margin-bottom:8px;">
+        <h3 style="margin:0 0 6px 0; font-size:0.85rem; color:#00bcd4;">🤖 AI Autopilot</h3>
+        <label style="display:flex; align-items:center; gap:6px; cursor:pointer; font-size:0.8rem;">
+          <input type="checkbox" id="autopilotToggle" style="width:16px; height:16px; cursor:pointer;">
           <span>Enable Autopilot</span>
         </label>
-        <div id="autopilotStatus" style="margin-top:8px; font-size:0.75rem; color:#9fb4d6;">
+        <div id="autopilotStatus" style="margin-top:6px; font-size:0.7rem; color:#9fb4d6;">
           <div>Status: <span id="apStatus">STANDBY</span></div>
           <div>Mode: <span id="apMode">-</span></div>
         </div>
-        <p class="hint" style="margin-top:8px; font-size:0.7rem; color:#7a8fa8;">
+        <p class="hint" style="margin-top:6px; font-size:0.65rem; color:#7a8fa8;">
           AI will maintain perfect orbit constraints and rescue you if off-course.
         </p>
       </div>

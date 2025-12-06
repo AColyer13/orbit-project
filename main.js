@@ -281,18 +281,33 @@ function circularSpeed(radius) {
 function updateTimeScaleFromSlider() {
   const sliderValue = Number(timeScaleInput.value);
   
-  // Logarithmic mapping: 0-100 slider -> 0.5x to 1000x
-  if (sliderValue <= 50) {
-    timeScale = 0.5 + (sliderValue / 50) * 9.5;
-  } else if (sliderValue <= 75) {
-    const t = (sliderValue - 50) / 25;
+  // Logarithmic mapping: 0-100 slider -> 1x to 10,000x
+  // Split into ranges for smoother control
+  if (sliderValue <= 25) {
+    // 0-25: 1x to 10x (linear for fine control at low speeds)
+    timeScale = 1 + (sliderValue / 25) * 9;
+  } else if (sliderValue <= 50) {
+    // 25-50: 10x to 100x
+    const t = (sliderValue - 25) / 25;
     timeScale = 10 * Math.pow(10, t);
-  } else {
-    const t = (sliderValue - 75) / 25;
+  } else if (sliderValue <= 75) {
+    // 50-75: 100x to 1,000x
+    const t = (sliderValue - 50) / 25;
     timeScale = 100 * Math.pow(10, t);
+  } else {
+    // 75-100: 1,000x to 10,000x
+    const t = (sliderValue - 75) / 25;
+    timeScale = 1000 * Math.pow(10, t);
   }
   
-  timeScaleVal.textContent = `${timeScale.toFixed(1)}x`;
+  // Format display based on magnitude
+  if (timeScale < 100) {
+    timeScaleVal.textContent = `${timeScale.toFixed(1)}x`;
+  } else if (timeScale < 1000) {
+    timeScaleVal.textContent = `${Math.round(timeScale)}x`;
+  } else {
+    timeScaleVal.textContent = `${(timeScale / 1000).toFixed(1)}kx`;
+  }
 }
 
 // Initialize time scale on page load
@@ -498,6 +513,12 @@ document.getElementById('resetBtn').addEventListener('click', () => {
 document.getElementById('stopBtn').addEventListener('click', () => {
   isRunning = !isRunning;
   document.getElementById('stopBtn').textContent = isRunning ? 'Stop' : 'Resume';
+  
+  if (isRunning) {
+    startPhysicsSimulation();
+  } else {
+    stopPhysicsSimulation();
+  }
 });
 
 timeScaleInput.addEventListener('input', () => {
@@ -648,42 +669,70 @@ function draw() {
 }
 
 let last = performance.now();
-function loop(now) {
-  const realDt = (now - last) / 1000;
-  last = now;
-  frameCount++;
+let lastRealTime = Date.now();
+let physicsInterval = null; // Separate interval for physics
+
+// PHYSICS LOOP - Runs independently of tab visibility
+function physicsLoop() {
+  if (!isRunning || hasCrashed) return;
   
-  if (isRunning && !hasCrashed) {
-    // Adaptive time scaling for HEO to slow down near perigee
-    let effectiveTimeScale = timeScale;
-    
-    if (currentAltKm === 42000 && currentPreset.eccentricity) {
-      const altitude = (Math.hypot(state.pos.x, state.pos.y) - earthRadius) / 1000;
-      const apogeeAlt = currentPreset.apogeeAltKm;
-      const perigeeAlt = currentPreset.perigeeAltKm;
-      
-      // Scale time: slower near perigee (fast motion), faster at apogee (slow motion)
-      const altRatio = (altitude - perigeeAlt) / (apogeeAlt - perigeeAlt);
-      
-      // At perigee: 30% of user time scale
-      // At apogee: 100% of user time scale
-      effectiveTimeScale = timeScale * (0.3 + altRatio * 0.7);
-    }
-    
-    const dt = realDt * effectiveTimeScale;
-    const subSteps = 4;
-    const frameDt = dt / subSteps;
-    for (let i = 0; i < subSteps; i++) step(frameDt);
-    missionElapsedSeconds += dt;
-    
-    // RUN AUTOPILOT
-    if (autopilot && frameCount % 30 === 0) { // Run autopilot every 30 frames (~0.5 sec)
-      runAutopilot();
-    }
-    
-    projectionCooldown -= dt;
-    if (projectionCooldown <= 0) { updateProjection(); projectionCooldown = 0.3; }
+  const currentRealTime = Date.now();
+  const realDt = (currentRealTime - lastRealTime) / 1000;
+  lastRealTime = currentRealTime;
+  
+  // Clamp dt to prevent huge jumps
+  const clampedDt = Math.min(realDt, 0.1);
+  
+  // Adaptive time scaling for HEO
+  let effectiveTimeScale = timeScale;
+  
+  if (currentAltKm === 42000 && currentPreset.eccentricity) {
+    const altitude = (Math.hypot(state.pos.x, state.pos.y) - earthRadius) / 1000;
+    const apogeeAlt = currentPreset.apogeeAltKm;
+    const perigeeAlt = currentPreset.perigeeAltKm;
+    const altRatio = (altitude - perigeeAlt) / (apogeeAlt - perigeeAlt);
+    effectiveTimeScale = timeScale * (0.3 + altRatio * 0.7);
   }
+  
+  const dt = clampedDt * effectiveTimeScale;
+  const subSteps = 4;
+  const frameDt = dt / subSteps;
+  for (let i = 0; i < subSteps; i++) step(frameDt);
+  missionElapsedSeconds += dt;
+  
+  // Run autopilot
+  if (autopilot && frameCount % 30 === 0) {
+    runAutopilot();
+  }
+  
+  projectionCooldown -= dt;
+  if (projectionCooldown <= 0) { 
+    updateProjection(); 
+    projectionCooldown = 0.3; 
+  }
+}
+
+// Start physics simulation with setInterval (runs even when tab inactive)
+function startPhysicsSimulation() {
+  if (physicsInterval) {
+    clearInterval(physicsInterval);
+  }
+  lastRealTime = Date.now();
+  // Run physics at ~60Hz (16.67ms per frame)
+  physicsInterval = setInterval(physicsLoop, 16);
+}
+
+// Stop physics simulation
+function stopPhysicsSimulation() {
+  if (physicsInterval) {
+    clearInterval(physicsInterval);
+    physicsInterval = null;
+  }
+}
+
+// RENDER LOOP - Only for drawing (can be throttled, doesn't affect physics)
+function renderLoop(now) {
+  frameCount++;
   
   updateScale();
   draw();
@@ -705,9 +754,7 @@ function loop(now) {
   if (currentPreset.propellant.xenon > 0) propText += `Xe: ${xenonTotal.toFixed(1)} kg `;
   if (currentPreset.propellant.biprop > 0) propText += `Biprop: ${bipropTotal.toFixed(1)} kg`;
   
-  // Add power status for electric thrusters - ONLY orbital eclipse
   if (currentPreset.solarArrayPower > 0) {
-    // Simple icon: sun when in sunlight, moon when in eclipse
     const chargingIcon = isInSunlight ? '☀️' : '🌑';
     propText += ` | ${chargingIcon}⚡${(electricThrusterPower * 100).toFixed(0)}%`;
   }
@@ -721,7 +768,6 @@ function loop(now) {
   const fuelLevelEl = document.getElementById('fuelLevel');
   fuelLevelEl.textContent = `Fuel: ${fuelPercent.toFixed(1)}%`;
   
-  // Color code fuel level
   if (fuelPercent > 50) {
     fuelLevelEl.style.color = '#4caf50';
   } else if (fuelPercent > 20) {
@@ -730,18 +776,16 @@ function loop(now) {
     fuelLevelEl.style.color = '#f44336';
   }
   
-  // Update mission day counter WITHOUT time-of-day clock
+  // Update mission time
   const days = Math.floor(missionElapsedSeconds / 86400);
   const hours = Math.floor((missionElapsedSeconds % 86400) / 3600);
   const minutes = Math.floor((missionElapsedSeconds % 3600) / 60);
-  
   document.getElementById('missionTime').textContent = `Mission: Day ${days}, ${hours}h ${minutes}m`;
   
-  // Update constraint status - DUAL INDICATORS
+  // Update constraint status
   const altStatusEl = document.getElementById('altStatus');
   const velStatusEl = document.getElementById('velStatus');
   
-  // CRASH OVERRIDE
   if (hasCrashed) {
     altStatusEl.textContent = 'CRASHED';
     altStatusEl.style.color = '#ff0000';
@@ -756,7 +800,6 @@ function loop(now) {
     violationsEl.style.color = '#ff0000';
     violationsEl.style.fontWeight = 'bold';
   } else {
-    // Normal status updates
     altStatusEl.textContent = constraintCheck.altStatus;
     if (constraintCheck.altStatus === 'CRITICAL') {
       altStatusEl.style.color = '#f44336';
@@ -772,7 +815,6 @@ function loop(now) {
       altStatusEl.style.fontWeight = 'normal';
     }
     
-    // Velocity Status
     velStatusEl.textContent = constraintCheck.velStatus;
     if (constraintCheck.velStatus === 'CRITICAL') {
       velStatusEl.style.color = '#f44336';
@@ -788,7 +830,6 @@ function loop(now) {
       velStatusEl.style.fontWeight = 'normal';
     }
     
-    // Show violations if any
     const violationsEl = document.getElementById('violations');
     if (constraintCheck.violations.length > 0) {
       violationsEl.textContent = constraintCheck.violations.join(' | ');
@@ -800,9 +841,13 @@ function loop(now) {
     }
   }
   
-  requestAnimationFrame(loop);
+  requestAnimationFrame(renderLoop);
 }
-requestAnimationFrame(loop);
+
+// Initialize and start both loops
+lastRealTime = Date.now();
+startPhysicsSimulation();
+requestAnimationFrame(renderLoop);
 
 // === Projection, scaling, and thrust visuals ===
 function updateScale() {
