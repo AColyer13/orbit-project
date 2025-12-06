@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Orbital Play</title>
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <h2>Satellite Orbit Sandbox</h2>
+  <div id="layout">
+    <div id="main">
+      <div id="hud">
+        <div>Speed: <span id="speed">0</span> m/s</div>
+        <div>Altitude: <span id="altitude">0</span> km</div>
+        <div id="propStatus">Hyd: 0 kg | Xe: 0 kg</div>
+        <div id="fuelLevel">Fuel: 100%</div>
+        <div id="missionTime" style="font-size: 0.85rem; color: #ffb347; font-weight: bold;">Mission: Day 0, 0h 0m</div>
+        <div id="constraintMode" style="font-size: 0.85rem; color: #4caf50;">Real World Constraints</div>
+        <div>Alt Status: <span id="altStatus">NOMINAL</span></div>
+        <div>Vel Status: <span id="velStatus">NOMINAL</span></div>
+        <div id="violations" style="display:none; color:#ff9800; font-size:0.8rem;"></div>
+      </div>
+      <canvas id="sim" width="700" height="700"></canvas>
+      <div id="controls">
+        <button data-thrust="upleft">↖</button><button data-thrust="up">↑</button><button data-thrust="upright">↗</button>
+        <button data-thrust="left">←</button><div></div><button data-thrust="right">→</button>
+        <button data-thrust="downleft">↙</button><button data-thrust="down">↓</button><button data-thrust="downright">↘</button>
+      </div>
+      <div id="burnHistory">
+        <h4 style="margin:5px 0; font-size:0.9rem;">Recent Burns</h4>
+        <div id="burnLog"></div>
+      </div>
+      
+      <!-- AI AUTOPILOT LOG -->
+      <div id="autopilotLog" style="margin:10px; padding:10px; background:#0b142b; border:1px solid #1e2a44; border-radius:6px; max-width:700px; display:none;">
+        <h4 style="margin:5px 0; font-size:0.9rem;">🤖 Autopilot Log</h4>
+        <div id="aiLog" style="max-height:100px; overflow-y:auto; font-size:0.75rem; line-height:1.4; color:#a0d8ff;"></div>
+      </div>
+    </div>
+    <aside id="sidebar">
+      <h3>Constraints</h3>
+      <div style="display:flex; gap:6px; margin-bottom:10px;">
+        <button id="modeRealBtn" class="mode-btn active">Real World</button>
+        <button id="modeEasyBtn" class="mode-btn">Easy</button>
+      </div>
+      
+      <!-- AI AUTOPILOT CONTROL -->
+      <div style="background:#0f1f3a; border:2px solid #1e2a44; padding:10px; border-radius:6px; margin-bottom:10px;">
+        <h3 style="margin:0 0 8px 0; font-size:0.9rem; color:#00bcd4;">🤖 AI Autopilot</h3>
+        <label style="display:flex; align-items:center; gap:8px; cursor:pointer; font-size:0.85rem;">
+          <input type="checkbox" id="autopilotToggle" style="width:18px; height:18px; cursor:pointer;">
+          <span>Enable Autopilot</span>
+        </label>
+        <div id="autopilotStatus" style="margin-top:8px; font-size:0.75rem; color:#9fb4d6;">
+          <div>Status: <span id="apStatus">STANDBY</span></div>
+          <div>Mode: <span id="apMode">-</span></div>
+        </div>
+        <p class="hint" style="margin-top:8px; font-size:0.7rem; color:#7a8fa8;">
+          AI will maintain perfect orbit constraints and rescue you if off-course.
+        </p>
+      </div>
+      
+      <h3>Orbit Presets</h3>
+      <div id="alt-buttons">
+        <button data-alt="400">LEO 400 km</button>
+        <button data-alt="550">SSO 550 km</button>
+        <button data-alt="1200">LEO 1200 km</button>
+        <button data-alt="20200">MEO 20,200 km</button>
+        <button data-alt="35786">GEO 35,786 km</button>
+        <button data-alt="42000">HEO 42,000 km</button>
+      </div>
+      <label class="field">
+        Time scale
+        <input id="timeScale" type="range" min="0" max="100" step="1" value="50">
+        <span id="timeScaleVal">1.0x</span>
+      </label>
+      <div class="field">
+        Mission Control
+        <div id="thruster-controls"></div>
+        <button id="resetBtn">Reset</button>
+        <button id="stopBtn">Stop</button>
+      </div>
+      <p class="hint">
+        <strong>Arrow Keys:</strong> RCS thrusters (continuous combustion pulses for attitude control).<br>
+        <strong>Buttons Below:</strong> Maneuver engines (impulsive burns for orbit changes).
+      </p>
+      <p class="hint" style="color:#ffb347; font-size:0.7rem;">
+        ⚠️ HEO 42,000 km (Molniya) - HIGHLY ELLIPTICAL
+      </p>
+      <p class="hint" style="color:#a0d8ff; font-size:0.7rem;">
+        🔥 <strong>Combustion:</strong> Chemical reaction expels hot gas (fast, uses more fuel).<br>
+        ⚡ <strong>Electric:</strong> Electricity accelerates ions (slow, very efficient).
+      </p>
+    </aside>
+  </div>
+
+  <script src="./ai/autopilot.js"></script>
+  <script src="./main.js" defer></script>
+</body>
+</html>

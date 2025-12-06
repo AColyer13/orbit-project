@@ -1,0 +1,115 @@
+body { margin: 0; background:#060b1a; color:#eaf2ff; font-family: Arial, sans-serif; display:flex; flex-direction:column; align-items:center; }
+#layout { display:flex; gap:18px; padding:10px; }
+#main { display:flex; flex-direction:column; align-items:center; }
+#hud { margin:10px; display:flex; gap:16px; flex-wrap: wrap; }
+canvas { border:1px solid #1e2a44; background:#000; }
+#controls { margin:10px; display:grid; grid-template-columns:repeat(3,60px); grid-template-rows:repeat(3,40px); gap:6px; }
+button { background:#1e2a44; color:#eaf2ff; border:1px solid #304269; cursor:pointer; padding:6px; }
+button:hover { background:#2b3c62; }
+#sidebar { width:200px; background:#0b142b; border:1px solid #1e2a44; padding:10px; border-radius:6px; display:flex; flex-direction:column; gap:10px; }
+#alt-buttons { display:grid; grid-template-columns:repeat(2,1fr); gap:6px; }
+.field { display:flex; flex-direction:column; gap:4px; font-size:0.9rem; }
+#dv-controls { display:flex; gap:6px; }
+.hint { font-size:0.8rem; color:#9fb4d6; line-height:1.3; margin:0; }
+#propStatus { font-size: 0.85rem; color: #a0d8ff; }
+#fuelLevel { font-size: 0.85rem; color: #4caf50; font-weight: bold; }
+#missionTime { font-size: 0.85rem; color: #ffb347; font-weight: bold; }
+#orbitStatus { font-size: 0.85rem; }
+#altStatus { font-size: 0.85rem; }
+#velStatus { font-size: 0.85rem; }
+#violations { font-size: 0.75rem; flex-basis: 100%; }
+#burnHistory { margin:10px; padding:10px; background:#0b142b; border:1px solid #1e2a44; border-radius:6px; max-width:700px; }
+#burnLog { max-height:120px; overflow-y:auto; font-size:0.8rem; line-height:1.4; }
+.burn-entry { padding:4px; border-left:3px solid #4caf50; margin:4px 0; background:#0f1929; }
+.burn-entry.prograde { border-left-color:#4caf50; }
+.burn-entry.retrograde { border-left-color:#f44336; }
+.burn-entry.radial { border-left-color:#ffb347; }
+.burn-cost { color:#9fb4d6; font-size:0.75rem; }
+#thruster-controls { display:flex; flex-direction:column; gap:4px; margin-top:8px; }
+.thruster-btn { 
+  font-size: 0.75rem; 
+  padding: 8px; 
+  background: #1a2a44;
+  text-align: left;
+  line-height: 1.3;
+}
+.thruster-btn.chemical { 
+  border-left: 4px solid #4caf50;
+  background: linear-gradient(90deg, rgba(76, 175, 80, 0.1) 0%, #1a2a44 20%);
+}
+.thruster-btn.electric { 
+  border-left: 4px solid #00bcd4;
+  background: linear-gradient(90deg, rgba(0, 188, 212, 0.1) 0%, #1a2a44 20%);
+}
+.thruster-btn.chemical:hover {
+  background: linear-gradient(90deg, rgba(76, 175, 80, 0.2) 0%, #2b3c62 20%);
+  border-left-color: #66bb6a;
+}
+.thruster-btn.electric:hover {
+  background: linear-gradient(90deg, rgba(0, 188, 212, 0.2) 0%, #2b3c62 20%);
+  border-left-color: #26c6da;
+}
+.thruster-btn:disabled { 
+  opacity: 0.4; 
+  cursor: not-allowed;
+  filter: grayscale(0.5);
+}
+.mode-btn { 
+  flex: 1; 
+  padding: 8px; 
+  background: #1a2a44; 
+  border: 2px solid #304269;
+  color: #9fb4d6;
+  cursor: pointer;
+  border-radius: 4px;
+  transition: all 0.3s;
+  font-size: 0.8rem;
+  font-weight: bold;
+}
+.mode-btn:hover { background: #2b3c62; }
+.mode-btn.active { 
+  background: #4caf50; 
+  color: #000;
+  border-color: #45a049;
+  font-weight: bold;
+}
+
+#constraintMode {
+  font-size: 0.85rem;
+  font-weight: normal;
+  color: #4caf50;
+}
+
+#autopilotLog {
+  margin: 10px;
+  padding: 10px;
+  background: #0b142b;
+  border: 1px solid #1e2a44;
+  border-radius: 6px;
+  max-width: 700px;
+}
+
+#aiLog {
+  max-height: 100px;
+  overflow-y: auto;
+  font-size: 0.75rem;
+  line-height: 1.4;
+  color: #a0d8ff;
+}
+
+#autopilotToggle {
+  width: 18px;
+  height: 18px;
+  cursor: pointer;
+  accent-color: #00bcd4;
+}
+
+#apStatus {
+  font-weight: bold;
+  color: #9fb4d6;
+}
+
+#apMode {
+  font-weight: bold;
+  color: #00bcd4;
+}
