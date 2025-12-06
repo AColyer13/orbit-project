@@ -17,6 +17,7 @@ let gameMode = 'real'; // 'real' or 'easy'
 let state = {
   pos: { x: earthRadius + 400e3, y: 0 },
   vel: { x: 0, y: 0 },
+  argumentOfPerigee: 0.0  // NEW: ω in radians (0 = perigee on +X axis)
 };
 
 let thrust = { x: 0, y: 0 };
@@ -350,13 +351,15 @@ function setOrbit(altKm) {
     
     state.pos = { x: rApogee, y: 0 };
     state.vel = { x: 0, y: vApogee }; // Velocity perpendicular at apogee
+    state.argumentOfPerigee = Math.PI; // Perigee at 180° (real Molniya: perigee over southern hemisphere)
     
-    console.log(`HEO Molniya orbit initialized: e=${currentPreset.eccentricity}, apogee=${currentPreset.apogeeAltKm}km, perigee=${currentPreset.perigeeAltKm}km, v_apogee=${vApogee.toFixed(1)}m/s`);
+    console.log(`HEO Molniya orbit initialized: e=${currentPreset.eccentricity}, apogee=${currentPreset.apogeeAltKm}km, perigee=${currentPreset.perigeeAltKm}km, v_apogee=${vApogee.toFixed(1)}m/s, ω=${(state.argumentOfPerigee * 180 / Math.PI).toFixed(1)}°`);
   } else {
     // Circular orbit for all other altitudes
     const r = earthRadius + altKm * 1000;
     state.pos = { x: r, y: 0 };
     state.vel = { x: 0, y: circularSpeed(r) };
+    state.argumentOfPerigee = 0; // Default: perigee on +X axis for circular orbits
   }
   
   thrust.x = thrust.y = 0;
@@ -526,10 +529,24 @@ timeScaleInput.addEventListener('input', () => {
 });
 
 // Drag constants
-const dragCoeff = 2.2; // Drag coefficient (typical for satellites)
-const crossSectionalArea = 10; // Cross-sectional area in m² (assumed for small satellite)
-const rho0 = 1.225; // Sea-level atmospheric density in kg/m³
-const scaleHeight = 8500; // Atmospheric scale height in meters
+const dragCoeff = 2.2;
+const crossSectionalArea = 10;
+const rho0 = 1.225;
+const scaleHeight = 8500;
+
+// J₂ oblateness constants (Earth's equatorial bulge)
+const J2 = 1.08262668e-3;
+const Re = 6.378137e6;
+
+// Third-body perturbation constants
+const sunMass = 1.989e30; // kg
+const moonMass = 7.342e22; // kg
+const sunDistance = 1.496e11; // 1 AU in meters
+const moonDistance = 3.844e8; // Average Earth-Moon distance in meters
+
+// Solar radiation pressure constants
+const solarPressure = 4.56e-6; // N/m² at 1 AU (P = 1361 W/m² / c)
+const reflectivityCoeff = 1.3; // CR (coefficient of reflectivity, typical for satellites)
 
 function step(dt) {
   const r = Math.hypot(state.pos.x, state.pos.y);
@@ -549,6 +566,99 @@ function step(dt) {
   
   const accelGrav = -G * earthMass / (r * r);
   
+  // ========== J₂ OBLATENESS PERTURBATION (Curtis eq. 10.39) ==========
+  const r_norm = r;
+  const z_equiv = state.pos.y; // In 2D, treat Y-axis as Z (polar direction)
+  const sin_lat_squared = (z_equiv * z_equiv) / (r_norm * r_norm);
+  
+  const j2_factor = (-3/2) * J2 * (G * earthMass / (r_norm * r_norm)) * Math.pow(Re / r_norm, 2);
+  const j2_radial = j2_factor * (1 - 5 * sin_lat_squared);
+  const j2_polar = j2_factor * 2 * (z_equiv / r_norm);
+  
+  const r_hat_x = state.pos.x / r_norm;
+  const r_hat_y = state.pos.y / r_norm;
+  
+  const j2_ax = j2_radial * r_hat_x;
+  const j2_ay = j2_radial * r_hat_y + j2_polar;
+  
+  // ========== THIRD-BODY GRAVITY (Sun + Moon) - IN-PLANE ONLY =========
+  // NOTE: This is a 2D approximation - missing ~60% of real 3D effects
+  // Mainly models in-plane perturbations (semi-major axis drift, eccentricity changes)
+  
+  // Sun position (rotates once per year = 365.25 days)
+  const yearSeconds = 365.25 * 86400;
+  const sunAngle = (missionElapsedSeconds / yearSeconds) * 2 * Math.PI;
+  const sunPos = {
+    x: sunDistance * Math.cos(sunAngle),
+    y: sunDistance * Math.sin(sunAngle)
+  };
+  
+  // Moon position (rotates once per 27.3 days)
+  const moonPeriod = 27.3 * 86400;
+  const moonAngle = (missionElapsedSeconds / moonPeriod) * 2 * Math.PI;
+  const moonPos = {
+    x: moonDistance * Math.cos(moonAngle),
+    y: moonDistance * Math.sin(moonAngle)
+  };
+  
+  // Third-body perturbation acceleration (Curtis eq. 12.77)
+  const calculateThirdBodyAccel = (bodyMass, bodyPos) => {
+    // Vector from satellite to third body
+    const dx = bodyPos.x - state.pos.x;
+    const dy = bodyPos.y - state.pos.y;
+    const r_sat_body = Math.hypot(dx, dy);
+    
+    // Vector from Earth to third body
+    const r_earth_body = Math.hypot(bodyPos.x, bodyPos.y);
+    
+    // Perturbation acceleration
+    const term1_x = (G * bodyMass / Math.pow(r_sat_body, 3)) * dx;
+    const term1_y = (G * bodyMass / Math.pow(r_sat_body, 3)) * dy;
+    
+    const term2_x = (G * bodyMass / Math.pow(r_earth_body, 3)) * bodyPos.x;
+    const term2_y = (G * bodyMass / Math.pow(r_earth_body, 3)) * bodyPos.y;
+    
+    return {
+      x: term1_x - term2_x,
+      y: term1_y - term2_y
+    };
+  };
+  
+  const sunAccel = calculateThirdBodyAccel(sunMass, sunPos);
+  const moonAccel = calculateThirdBodyAccel(moonMass, moonPos);
+  
+  // ========== SOLAR RADIATION PRESSURE (IN-PLANE ONLY) =========
+  // NOTE: This is a 2D approximation - missing ~60% of real 3D effects
+  // Only includes radial pressure component (in-plane)
+  
+  let srpAx = 0;
+  let srpAy = 0;
+  
+  if (isInSunlight && currentPreset.solarArrayPower > 0) {
+    // Direction from satellite to Sun
+    const sunDx = sunPos.x - state.pos.x;
+    const sunDy = sunPos.y - state.pos.y;
+    const distToSun = Math.hypot(sunDx, sunDy);
+    
+    // Unit vector pointing toward Sun
+    const sunUnitX = sunDx / distToSun;
+    const sunUnitY = sunDy / distToSun;
+    
+    // SRP acceleration: a = (P × CR × A/m) / r²
+    // Pressure decreases with 1/r² from Sun
+    const pressureAtSat = solarPressure * Math.pow(sunDistance / distToSun, 2);
+    
+    // Estimate area-to-mass ratio from satellite size
+    const mass = getCurrentMass();
+    const estimatedArea = 10 + currentPreset.solarArrayPower * 8; // Solar arrays add area
+    const areaToMass = estimatedArea / mass; // m²/kg
+    
+    const srpMagnitude = pressureAtSat * reflectivityCoeff * areaToMass;
+    
+    srpAx = srpMagnitude * sunUnitX;
+    srpAy = srpMagnitude * sunUnitY;
+  }
+  
   // Calculate atmospheric drag
   const altitude = r - earthRadius; // Altitude in meters
   const rho = rho0 * Math.exp(-altitude / scaleHeight); // Exponential atmosphere density
@@ -565,8 +675,10 @@ function step(dt) {
     dragAy = -dragMagnitude * vHatY;
   }
   
-  const ax = accelGrav * (state.pos.x / r) + thrust.x + dragAx;
-  const ay = accelGrav * (state.pos.y / r) + thrust.y + dragAy;
+  // TOTAL ACCELERATION: Gravity + J₂ + Third-Body + SRP + Drag + Thrust
+  const ax = accelGrav * (state.pos.x / r) + j2_ax + sunAccel.x + moonAccel.x + srpAx + thrust.x + dragAx;
+  const ay = accelGrav * (state.pos.y / r) + j2_ay + sunAccel.y + moonAccel.y + srpAy + thrust.y + dragAy;
+  
   state.vel.x += ax * dt;
   state.vel.y += ay * dt;
   state.pos.x += state.vel.x * dt;
@@ -621,16 +733,21 @@ if (autopilot) {
     
     // Create callback for autopilot to fire thrusters
     const autopilotFireThruster = (deltaV) => {
-      // Find best available thruster (prefer electric for efficiency, chemical for rescue)
-      const useElectric = !autopilot.rescueMode && currentPreset.thrusters.some(t => 
-        t.type.includes('hall') || t.type.includes('ion')
-      );
+      // CRITICAL FIX: Use the proper fireThruster function that consumes fuel!
+      
+      // Determine thruster type based on rescue mode and delta-V magnitude
+      const useElectric = !autopilot.rescueMode && 
+                         Math.abs(deltaV) < 5 && 
+                         currentPreset.thrusters.some(t => 
+                           t.type.includes('hall') || t.type.includes('ion')
+                         );
       
       let thrusterIdx = 0;
       let thruster = currentPreset.thrusters[0];
       let propType = 'hydrazine';
       
       if (useElectric) {
+        // Find electric thruster
         thrusterIdx = currentPreset.thrusters.findIndex(t => 
           t.type.includes('hall') || t.type.includes('ion')
         );
@@ -639,9 +756,13 @@ if (autopilot) {
           propType = 'xenon';
         }
       } else {
-        // Use chemical for rescue mode
+        // Use chemical thruster (rescue mode or large burns)
         if (currentPreset.propellantRemaining.hydrazine > 0) {
-          propType = 'hydrazine';
+          thrusterIdx = currentPreset.thrusters.findIndex(t => t.type === 'chemical_monoprop');
+          if (thrusterIdx !== -1) {
+            thruster = currentPreset.thrusters[thrusterIdx];
+            propType = 'hydrazine';
+          }
         } else if (currentPreset.propellantRemaining.biprop > 0) {
           thrusterIdx = currentPreset.thrusters.findIndex(t => t.type === 'biprop_MMHMHN');
           if (thrusterIdx !== -1) {
@@ -651,7 +772,15 @@ if (autopilot) {
         }
       }
       
-      // Fire the thruster
+      // Check if we have enough fuel before firing
+      const available = currentPreset.propellantRemaining[propType] || 0;
+      if (available <= 0) {
+        autopilot.rescueMode = true; // Out of fuel - go into rescue mode
+        autopilot.logMessage(`⚠️ OUT OF ${propType.toUpperCase()}! Autopilot cannot correct orbit.`);
+        return;
+      }
+      
+      // Fire the thruster using the PROPER function that consumes fuel
       fireThruster(thrusterIdx, deltaV, thruster, propType);
     };
     
@@ -768,6 +897,12 @@ function renderLoop(now) {
   speedEl.textContent = speed.toFixed(1);
   altEl.textContent = altitude.toFixed(1);
   document.getElementById('eccentricity').textContent = constraintCheck.eccentricity.toFixed(4);
+  
+  // Display true anomaly in degrees
+  if (constraintCheck.trueAnomaly !== undefined) {
+    const trueAnomalyDeg = (constraintCheck.trueAnomaly * 180 / Math.PI).toFixed(1);
+    document.getElementById('trueAnomaly').textContent = trueAnomalyDeg;
+  }
   
   // Update propellant display
   const hydTotal = currentPreset.propellantRemaining.hydrazine;
@@ -1364,7 +1499,7 @@ function drawBurnIndicator() {
 function checkOrbitConstraints() {
   const r = Math.hypot(state.pos.x, state.pos.y);
   const altitude = (r - earthRadius) / 1000;
-  const targetAlt = currentConstraints.targetAlt;
+   const targetAlt = currentConstraints.targetAlt;
   const altDev = Math.abs(altitude - targetAlt);
   
   const vMag = Math.hypot(state.vel.x, state.vel.y);
@@ -1376,6 +1511,12 @@ function checkOrbitConstraints() {
   const h = state.pos.x * state.vel.y - state.pos.y * state.vel.x;
   const p = (h * h) / (G * earthMass);
   const eccentricity = Math.sqrt(Math.max(0, 1 - p / semiMajorAxis));
+  
+  // Calculate TRUE ANOMALY (ν) - angle from perigee to current position
+  const angleFromXAxis = Math.atan2(state.pos.y, state.pos.x);
+  let trueAnomaly = angleFromXAxis - state.argumentOfPerigee;
+  if (trueAnomaly < 0) trueAnomaly += 2 * Math.PI;
+  if (trueAnomaly > 2 * Math.PI) trueAnomaly -= 2 * Math.PI;
   
   // UNIVERSAL ESCAPE VELOCITY CHECK (applies to ALL satellites)
   const escapeVelocity = Math.sqrt(2 * G * earthMass / r);
@@ -1435,6 +1576,7 @@ function checkOrbitConstraints() {
     // CRITICAL: Check escape velocity for ALL satellite types
     if (vMag > escapeVelocity * 0.95) {
       // Approaching escape velocity - CRITICAL for all satellites!
+     
       velStatus = 'CRITICAL';
       violations.push(`⚠️ ESCAPE VELOCITY! ${vMag.toFixed(0)}m/s (${(escapeVelocity * 0.95).toFixed(0)}m/s limit)`);
     } else if (isHEO) {
@@ -1482,6 +1624,8 @@ function checkOrbitConstraints() {
     } else {
       // Circular orbits - check if too elliptical
       if (eccentricity > thresholds.critical) {
+       
+       
         eccStatus = 'CRITICAL';
         violations.push(`Ecc: ${eccentricity.toFixed(4)} (high)`);
       } else if (eccentricity > thresholds.violation) {
@@ -1494,7 +1638,18 @@ function checkOrbitConstraints() {
     }
   }
   
-  return { altStatus, velStatus, eccStatus, violations, eccentricity, altitude, velocity: vMag };
+  return { 
+    altStatus, 
+    velStatus, 
+    eccStatus, 
+    violations, 
+    eccentricity, 
+    altitude, 
+    velocity: vMag, 
+    trueAnomaly, // NEW: expose true anomaly for autopilot
+    semiMajorAxis, // NEW: expose for autopilot
+    angleFromXAxis // NEW: for debugging
+  };
 }
 
 // Setup game mode buttons
