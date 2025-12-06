@@ -250,22 +250,24 @@ class OrbitalAutopilot {
       }
     }
 
-    // === EXECUTE ONE BURN EVERY 60-120 SECONDS (realistic pacing) ===
-    const minBurnInterval = isMolniya ? 120 : 60; // Longer intervals for Molniya
+    // === EXECUTE BURNS WITH ADAPTIVE TIMING ===
+    // At high time scales, allow more frequent burns to keep up with rapid drift
+    const minBurnInterval = isMolniya ? 120 : 60; // Base interval in seconds
     
-    if (this.burnQueue.length > 0 && missionTime - this.lastBurnTime > minBurnInterval) {
+    // Reduce interval at high altitudes where orbital period is longer
+    const adjustedInterval = altitude > 30000 ? minBurnInterval * 0.5 : minBurnInterval;
+    
+    if (this.burnQueue.length > 0 && missionTime - this.lastBurnTime > adjustedInterval) {
       const burn = this.burnQueue.shift();
       this.lastBurnTime = missionTime;
 
-      // Calculate delta-V magnitude along velocity vector (prograde/retrograde)
-      const vMag = Math.hypot(v_vec.x, v_vec.y);
+      // Calculate sign relative to current velocity; keep full magnitude for fuel parity with user burns
+      const vMag = Math.hypot(v_vec.x, v_vec.y) || 1;
       const vUnit = { x: v_vec.x / vMag, y: v_vec.y / vMag };
-      
-      // Dot product to get component along velocity
-      const dvComponent = burn.dv * (burn.dir.x * vUnit.x + burn.dir.y * vUnit.y);
+      const dot = burn.dir.x * vUnit.x + burn.dir.y * vUnit.y;
+      const dvToApply = burn.dv * (dot >= 0 ? 1 : -1);
 
-      // Fire thruster
-      fireThrusterCallback(dvComponent);
+      fireThrusterCallback(dvToApply, burn.thruster);
       
       this.logMessage(`${this.rescueMode ? '🚨 RESCUE' : '🤖 AUTO'}: ${burn.reason} | ${burn.dv.toFixed(2)} m/s [${burn.thruster}]`);
     }

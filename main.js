@@ -31,12 +31,14 @@ let missionElapsedSeconds = 0;
 let frameCount = 0;
 let burnHistory = [];
 let activeBurnIndicator = null;
-let activeRCSIndicator = null; // New: for arrow key thrust
+let activeRCSIndicator = null;
 let hasCrashed = false;
 let electricThrusterPower = 1.0;
 let batteryCapacityWh = 100;
 let isInSunlight = true;
 let adaptiveTimeScale = false;
+let autopilotSimAccumulator = 0; // NEW: tracks simulated seconds between autopilot runs
+let thrustPulseEndTimeSim = null; // NEW: sim-time cutoff for tap thrust
 
 // AI AUTOPILOT SYSTEM
 let autopilot = null;
@@ -367,6 +369,7 @@ function setOrbit(altKm) {
   missionElapsedSeconds = 0;
   burnHistory = [];
   hasCrashed = false;
+  autopilotSimAccumulator = 0; // reset autopilot cadence on orbit change
   updateBurnLog();
   updateProjection();
   createThrusterButtons();
@@ -379,7 +382,7 @@ function applyThrust(dir) {
   if (dir === 'down') thrust.y = thrustAccel;
   if (dir === 'left') thrust.x = -thrustAccel;
   if (dir === 'right') thrust.x = thrustAccel;
-  setTimeout(() => { thrust.x = 0; thrust.y = 0; }, 200);
+  thrustPulseEndTimeSim = missionElapsedSeconds + 0.2; // 0.2s in SIM time
   updateProjection();
 }
 
@@ -509,8 +512,28 @@ function consumeContinuousThrust(dt) {
 }
 
 document.getElementById('resetBtn').addEventListener('click', () => {
-  // Reset applies current game mode constraints
+  // Stop any running physics loop first
+  stopPhysicsSimulation();
+  
+  // Clear all inputs/state before re-seeding orbit
+  thrust.x = 0;
+  thrust.y = 0;
+  keysHeld.clear();
+  activeRCSIndicator = null;
+  activeBurnIndicator = null;
+  thrustPulseEndTimeSim = null;
+  autopilotSimAccumulator = 0;
+  hasCrashed = false;
+  isRunning = true; // Explicitly set to running
+  
+  // Reset orbit (this calls setOrbit which resets all orbital state)
   setOrbit(currentAltKm);
+
+  // Restart the physics simulation
+  startPhysicsSimulation();
+  
+  // Update UI
+  document.getElementById('stopBtn').textContent = 'Stop';
 });
 
 document.getElementById('stopBtn').addEventListener('click', () => {
@@ -732,46 +755,52 @@ if (autopilot) {
     if (!autopilot || !autopilot.enabled || hasCrashed) return;
     
     // Create callback for autopilot to fire thrusters
-    const autopilotFireThruster = (deltaV) => {
-      // CRITICAL FIX: Use the proper fireThruster function that consumes fuel!
-      
-      // Determine thruster type based on rescue mode and delta-V magnitude
-      const useElectric = !autopilot.rescueMode && 
-                         Math.abs(deltaV) < 5 && 
-                         currentPreset.thrusters.some(t => 
-                           t.type.includes('hall') || t.type.includes('ion')
-                         );
-      
+    const autopilotFireThruster = (deltaV, thrusterHint) => {
+      // Respect autopilot’s requested thruster if provided
+      let useElectric = thrusterHint === 'electric';
+      let forceHydrazine = thrusterHint === 'hydrazine';
+      let forceBiprop = thrusterHint === 'biprop';
+
+      if (thrusterHint === undefined) {
+        // Original heuristic fallback
+        useElectric = !autopilot.rescueMode &&
+                      Math.abs(deltaV) < 5 &&
+                      currentPreset.thrusters.some(t => t.type.includes('hall') || t.type.includes('ion'));
+      }
+
       let thrusterIdx = 0;
       let thruster = currentPreset.thrusters[0];
       let propType = 'hydrazine';
-      
+
       if (useElectric) {
-        // Find electric thruster
-        thrusterIdx = currentPreset.thrusters.findIndex(t => 
-          t.type.includes('hall') || t.type.includes('ion')
-        );
+        thrusterIdx = currentPreset.thrusters.findIndex(t => t.type.includes('hall') || t.type.includes('ion'));
         if (thrusterIdx !== -1) {
           thruster = currentPreset.thrusters[thrusterIdx];
           propType = 'xenon';
         }
-      } else {
-        // Use chemical thruster (rescue mode or large burns)
-        if (currentPreset.propellantRemaining.hydrazine > 0) {
-          thrusterIdx = currentPreset.thrusters.findIndex(t => t.type === 'chemical_monoprop');
-          if (thrusterIdx !== -1) {
-            thruster = currentPreset.thrusters[thrusterIdx];
-            propType = 'hydrazine';
-          }
-        } else if (currentPreset.propellantRemaining.biprop > 0) {
-          thrusterIdx = currentPreset.thrusters.findIndex(t => t.type === 'biprop_MMHMHN');
-          if (thrusterIdx !== -1) {
-            thruster = currentPreset.thrusters[thrusterIdx];
-            propType = 'biprop';
-          }
+      } else if (forceBiprop) {
+        const idx = currentPreset.thrusters.findIndex(t => t.type === 'biprop_MMHMHN');
+        if (idx !== -1) {
+          thrusterIdx = idx;
+          thruster = currentPreset.thrusters[idx];
+          propType = 'biprop';
+        }
+      } else if (forceHydrazine || currentPreset.propellantRemaining.hydrazine > 0) {
+        const idx = currentPreset.thrusters.findIndex(t => t.type === 'chemical_monoprop');
+        if (idx !== -1) {
+          thrusterIdx = idx;
+          thruster = currentPreset.thrusters[idx];
+          propType = 'hydrazine';
+        }
+      } else if (currentPreset.propellantRemaining.biprop > 0) {
+        const idx = currentPreset.thrusters.findIndex(t => t.type === 'biprop_MMHMHN');
+        if (idx !== -1) {
+          thrusterIdx = idx;
+          thruster = currentPreset.thrusters[idx];
+          propType = 'biprop';
         }
       }
-      
+
       // Check if we have enough fuel before firing
       const available = currentPreset.propellantRemaining[propType] || 0;
       if (available <= 0) {
@@ -779,7 +808,7 @@ if (autopilot) {
         autopilot.logMessage(`⚠️ OUT OF ${propType.toUpperCase()}! Autopilot cannot correct orbit.`);
         return;
       }
-      
+
       // Fire the thruster using the PROPER function that consumes fuel
       fireThruster(thrusterIdx, deltaV, thruster, propType);
     };
@@ -827,7 +856,7 @@ let physicsInterval = null; // Separate interval for physics
 // PHYSICS LOOP - Runs independently of tab visibility
 function physicsLoop() {
   if (!isRunning || hasCrashed) return;
-  
+
   const currentRealTime = Date.now();
   const realDt = (currentRealTime - lastRealTime) / 1000;
   lastRealTime = currentRealTime;
@@ -851,16 +880,33 @@ function physicsLoop() {
   const frameDt = dt / subSteps;
   for (let i = 0; i < subSteps; i++) step(frameDt);
   missionElapsedSeconds += dt;
-  
-  // Run autopilot
-  if (autopilot && frameCount % 30 === 0) {
-    runAutopilot();
+
+  // End tap-thrust pulses on sim time (respect timeScale)
+  if (thrustPulseEndTimeSim && missionElapsedSeconds >= thrustPulseEndTimeSim && keysHeld.size === 0) {
+    thrust.x = 0;
+    thrust.y = 0;
+    thrustPulseEndTimeSim = null;
+    updateProjection();
   }
-  
+
+  // ========== AUTOPILOT: SIM-TIME-BASED UPDATE ==========
+  // Runs every N simulated seconds, independent of frame rate or timeScale
+  if (autopilot && autopilot.enabled) {
+    const autopilotIntervalSimSeconds = 5; // adjust here if you want faster/slower AI cadence
+    const maxIterationsPerLoop = 8;       // safety cap to avoid long while loops
+    autopilotSimAccumulator += dt;
+    let iterations = 0;
+    while (autopilotSimAccumulator >= autopilotIntervalSimSeconds && iterations < maxIterationsPerLoop) {
+      runAutopilot();
+      autopilotSimAccumulator -= autopilotIntervalSimSeconds;
+      iterations++;
+    }
+  }
+
   projectionCooldown -= dt;
-  if (projectionCooldown <= 0) { 
-    updateProjection(); 
-    projectionCooldown = 0.3; 
+  if (projectionCooldown <= 0) {
+    updateProjection();
+    projectionCooldown = 0.3;
   }
 }
 
@@ -1318,22 +1364,24 @@ function fireThruster(thrusterIdx, dv, thruster, propType) {
     const massRatio = Math.exp(Math.abs(dv) / (thruster.Isp * g0));
     const mf = m0 / massRatio;
     const propUsedRocket = m0 - mf;
-    const propUsedRealistic = propUsedRocket * 0.05;
-    
-    if (propUsedRealistic > available) {
+
+    // Use full rocket-equation propellant (no extra scaling)
+    const propUsed = Math.max(propUsedRocket, 1e-4); // ensure very small burns still consume some fuel
+
+    if (propUsed > available) {
       console.warn('Insufficient xenon propellant for burn');
       return;
     }
-    
+
     // Consume xenon
-    currentPreset.propellantRemaining[propType] -= propUsedRealistic;
-    
+    currentPreset.propellantRemaining[propType] -= propUsed;
+
     // Consume battery power
     electricThrusterPower = Math.max(0, electricThrusterPower - powerNeeded);
     
     // Show burn duration notification for electric burns
     const violationsEl = document.getElementById('violations');
-    violationsEl.textContent = `⚡ Electric burn complete! Duration: ${burnDurationText} | Used ${propUsedRealistic.toFixed(3)} kg Xe, ${(powerNeeded * 100).toFixed(1)}% battery`;
+    violationsEl.textContent = `⚡ Electric burn complete! Duration: ${burnDurationText} | Used ${propUsed.toFixed(3)} kg Xe, ${(powerNeeded * 100).toFixed(1)}% battery`;
     violationsEl.style.display = 'block';
     violationsEl.style.color = '#00bcd4';
     setTimeout(() => {
@@ -1481,7 +1529,7 @@ function drawBurnIndicator() {
   // Draw RCS thrust indicator (from arrow keys)
   if (activeRCSIndicator) {
     activeRCSIndicator.frame++;
-    const sx = center.x + state.pos.x / metersPerPixel;
+       const sx = center.x + state.pos.x / metersPerPixel;
     const sy = center.y + state.pos.y / metersPerPixel;
     
     const pulseAlpha = 0.6 + 0.4 * Math.sin(activeRCSIndicator.frame * 0.2);
