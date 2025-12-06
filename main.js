@@ -767,6 +767,7 @@ function renderLoop(now) {
   
   speedEl.textContent = speed.toFixed(1);
   altEl.textContent = altitude.toFixed(1);
+  document.getElementById('eccentricity').textContent = constraintCheck.eccentricity.toFixed(4);
   
   // Update propellant display
   const hydTotal = currentPreset.propellantRemaining.hydrazine;
@@ -808,6 +809,7 @@ function renderLoop(now) {
   // Update constraint status
   const altStatusEl = document.getElementById('altStatus');
   const velStatusEl = document.getElementById('velStatus');
+  const eccStatusEl = document.getElementById('eccStatus');
   
   if (hasCrashed) {
     altStatusEl.textContent = 'CRASHED';
@@ -816,12 +818,9 @@ function renderLoop(now) {
     velStatusEl.textContent = 'CRASHED';
     velStatusEl.style.color = '#ff0000';
     velStatusEl.style.fontWeight = 'bold';
-    
-    const violationsEl = document.getElementById('violations');
-    violationsEl.textContent = '💥 SATELLITE DESTROYED - Impact with Earth surface!';
-    violationsEl.style.display = 'block';
-    violationsEl.style.color = '#ff0000';
-    violationsEl.style.fontWeight = 'bold';
+    eccStatusEl.textContent = 'CRASHED';
+    eccStatusEl.style.color = '#ff0000';
+    eccStatusEl.style.fontWeight = 'bold';
   } else {
     altStatusEl.textContent = constraintCheck.altStatus;
     if (constraintCheck.altStatus === 'CRITICAL') {
@@ -851,6 +850,21 @@ function renderLoop(now) {
     } else {
       velStatusEl.style.color = '#4caf50';
       velStatusEl.style.fontWeight = 'normal';
+    }
+    
+    eccStatusEl.textContent = constraintCheck.eccStatus;
+    if (constraintCheck.eccStatus === 'CRITICAL') {
+      eccStatusEl.style.color = '#f44336';
+      eccStatusEl.style.fontWeight = 'bold';
+    } else if (constraintCheck.eccStatus === 'VIOLATION') {
+      eccStatusEl.style.color = '#ff9800';
+      eccStatusEl.style.fontWeight = 'bold';
+    } else if (constraintCheck.eccStatus === 'WARNING') {
+      eccStatusEl.style.color = '#ffb347';
+      eccStatusEl.style.fontWeight = 'normal';
+    } else {
+      eccStatusEl.style.color = '#4caf50';
+      eccStatusEl.style.fontWeight = 'normal';
     }
     
     const violationsEl = document.getElementById('violations');
@@ -1368,6 +1382,7 @@ function checkOrbitConstraints() {
   
   let altStatus = 'NOMINAL';
   let velStatus = 'NOMINAL';
+  let eccStatus = 'NOMINAL';
   let violations = [];
   
   // For HEO, check if we're near apogee or perigee
@@ -1455,23 +1470,31 @@ function checkOrbitConstraints() {
       const eccDev = Math.abs(eccentricity - targetEcc);
       
       if (eccDev > thresholds.critical) {
+        eccStatus = 'CRITICAL';
         violations.push(`Ecc: ${eccentricity.toFixed(3)} (target: ${targetEcc.toFixed(2)}) - orbit shape changed!`);
+      } else if (eccDev > thresholds.violation) {
+        eccStatus = 'VIOLATION';
+        violations.push(`Ecc: ${eccentricity.toFixed(3)} (drifting from ${targetEcc.toFixed(2)})`);
       } else if (eccDev > thresholds.warning) {
+        eccStatus = 'WARNING';
         violations.push(`Ecc: ${eccentricity.toFixed(3)} (drifting from ${targetEcc.toFixed(2)})`);
       }
     } else {
       // Circular orbits - check if too elliptical
       if (eccentricity > thresholds.critical) {
+        eccStatus = 'CRITICAL';
         violations.push(`Ecc: ${eccentricity.toFixed(4)} (high)`);
       } else if (eccentricity > thresholds.violation) {
+        eccStatus = 'VIOLATION';
         violations.push(`Ecc: ${eccentricity.toFixed(4)}`);
       } else if (eccentricity > thresholds.warning) {
+        eccStatus = 'WARNING';
         violations.push(`Ecc: ${eccentricity.toFixed(4)}`);
       }
     }
   }
   
-  return { altStatus, velStatus, violations, eccentricity, altitude, velocity: vMag };
+  return { altStatus, velStatus, eccStatus, violations, eccentricity, altitude, velocity: vMag };
 }
 
 // Setup game mode buttons

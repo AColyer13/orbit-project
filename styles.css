@@ -299,6 +299,10 @@ button:hover {
   color: #00bcd4;
 }
 
+#eccStatus { 
+  font-size: 0.8rem; 
+}
+
 /* Mobile adjustments - only apply when necessary */
 @media (max-width: 1024px) {
   #layout {
