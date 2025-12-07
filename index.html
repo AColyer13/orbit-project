@@ -55,9 +55,19 @@
           <input type="checkbox" id="autopilotToggle" style="width:16px; height:16px; cursor:pointer;">
           <span>Enable Autopilot</span>
         </label>
-        <div id="autopilotStatus" style="margin-top:6px; font-size:0.7rem; color:#9fb4d6;">
-          <div>Status: <span id="apStatus">STANDBY</span></div>
-          <div>Mode: <span id="apMode">-</span></div>
+        <div id="autopilotStatus" style="margin-top:6px; font-size:0.75rem; color:#9fb4d6;">
+          <div style="display:flex; align-items:center; margin-bottom:4px;">
+            <span class="ai-active-indicator disabled"></span>
+            <span>Status: <span id="apStatus" style="color:#9fb4d6;">STANDBY</span></span>
+          </div>
+          <div style="display:flex; align-items:center;">
+            <span style="display:inline-block; width:12px; height:12px; margin-right:8px;"></span>
+            <span>Mode: <span id="apMode" style="color:#7a8fa8;">—</span></span>
+          </div>
+          <div id="apLastActive" style="display:flex; align-items:center; margin-top:4px; font-size:0.65rem; color:#7a8fa8;">
+            <span style="display:inline-block; width:12px; height:12px; margin-right:8px;"></span>
+            <span>Last Active: Never</span>
+          </div>
         </div>
         <p class="hint" style="margin-top:6px; font-size:0.65rem; color:#7a8fa8;">
           AI will maintain perfect orbit constraints and rescue you if off-course.
@@ -95,6 +105,64 @@
         🔥 <strong>Combustion:</strong> Chemical reaction expels hot gas (fast, uses more fuel).<br>
         ⚡ <strong>Electric:</strong> Electricity accelerates ions (slow, very efficient).
       </p>
+    </aside>
+    
+    <!-- MISSION PLANNER (NEW) -->
+    <aside id="missionPanel" style="width:300px; background:#0b142b; border:1px solid #1e2a44; padding:8px; border-radius:6px; display:flex; flex-direction:column; gap:8px; box-sizing:border-box; height:100%; overflow-y:auto;">
+      <h3 style="margin:0 0 6px 0; font-size:0.9rem; color:#00bcd4;">📋 Mission Planner</h3>
+      
+      <div style="background:#0f1f3a; border:1px solid #1e2a44; padding:6px; border-radius:4px; font-size:0.75rem;">
+        <label style="display:block; margin-bottom:4px;">
+          <strong>Active Mission:</strong>
+          <span id="activeMissionLabel" style="color:#ffb347;">None</span>
+        </label>
+        <div id="missionSteps" style="max-height:150px; overflow-y:auto; font-size:0.7rem; color:#9fb4d6; line-height:1.3;"></div>
+      </div>
+
+      <div style="font-size:0.75rem; color:#9fb4d6; margin-bottom:4px;">Plan New Mission:</div>
+      
+      <div class="field">
+        <label>Target Altitude (km)
+          <input type="number" id="missionAltInput" min="0" max="50000" value="400" style="width:100%; padding:4px; background:#0f1f3a; border:1px solid #304269; color:#eaf2ff;">
+        </label>
+      </div>
+      
+      <div class="field">
+        <label>Target Eccentricity
+          <input type="number" id="missionEccInput" min="0" max="1" step="0.01" value="0.0001" style="width:100%; padding:4px; background:#0f1f3a; border:1px solid #304269; color:#eaf2ff;">
+        </label>
+      </div>
+      
+      <div class="field">
+        <label>Mission Type
+          <select id="missionTypeSelect" style="width:100%; padding:4px; background:#0f1f3a; border:1px solid #304269; color:#eaf2ff;">
+            <option value="circularize">Circularize Orbit</option>
+            <option value="raise-altitude">Raise Altitude</option>
+            <option value="lower-altitude">Lower Altitude</option>
+            <option value="change-ecc">Change Eccentricity</option>
+            <option value="hohmann">Hohmann Transfer</option>
+            <option value="escape">Escape Trajectory</option>
+          </select>
+        </label>
+      </div>
+      
+      <button style="padding:8px; background:#1e2a44; color:#4caf50; border:1px solid #304269; border-radius:4px; cursor:pointer; font-weight:bold; font-size:0.75rem;" onclick="createMission()">+ Create Mission</button>
+      
+      <div id="missionQueue" style="font-size:0.7rem; color:#9fb4d6; max-height:200px; overflow-y:auto; border:1px solid #1e2a44; padding:4px; border-radius:4px;">
+        <strong style="display:block; margin-bottom:4px;">Queued Missions:</strong>
+        <div id="missionList" style="font-size:0.65rem;"></div>
+      </div>
+      
+      <button style="padding:6px; background:#1a2a44; color:#ff9800; border:1px solid #304269; border-radius:4px; cursor:pointer; font-size:0.75rem;" onclick="clearMissions()">Clear Queue</button>
+      
+      <hr style="border:none; border-top:1px solid #1e2a44; margin:6px 0;">
+      
+      <div style="font-size:0.7rem; color:#7a8fa8; line-height:1.3;">
+        <strong>ℹ️ Mission Types:</strong><br>
+        <strong>Hohmann:</strong> Fuel-optimal 2-impulse transfer (slow).<br>
+        <strong>Circularize:</strong> Remove eccentricity at 1-2 nodes.<br>
+        <strong>Lambert:</strong> Minimum-time targeting (TBD).
+      </div>
     </aside>
   </div>
 

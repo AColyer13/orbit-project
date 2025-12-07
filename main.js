@@ -738,13 +738,73 @@ if (autopilot) {
   function updateAutopilotDisplay() {
     const status = autopilot.getStatus();
     
-    if (status.enabled) {
-      apMode.textContent = status.rescueMode ? '🚨 RESCUE MODE' : '🤖 AUTO-MAINTAIN';
-      apMode.style.color = status.rescueMode ? '#ff9800' : '#00bcd4';
+    // Update status indicator and text
+    const statusSpan = document.getElementById('apStatus');
+    const modeSpan = document.getElementById('apMode');
+    const lastActiveDiv = document.getElementById('apLastActive');
+    const indicator = document.querySelector('.ai-active-indicator');
+    
+    if (!status.enabled) {
+      // Autopilot disabled
+      statusSpan.textContent = 'STANDBY';
+      statusSpan.classList.remove('active', 'idle');
+      statusSpan.style.color = '#9fb4d6';
+      modeSpan.textContent = '—';
+      modeSpan.style.color = '#7a8fa8';
+      if (indicator) {
+        indicator.classList.remove('active', 'idle');
+        indicator.classList.add('disabled');
+      }
+      lastActiveDiv.style.display = 'none';
+    } else {
+      // Autopilot enabled - check if recently active
+      const now = Date.now();
+      const lastActiveMs = status.lastActiveTime ? now - status.lastActiveTime : null;
+      const isRecentlyActive = lastActiveMs && lastActiveMs < 5000; // Within last 5 seconds
+      
+      if (isRecentlyActive) {
+        statusSpan.textContent = '🟢 ACTIVE';
+        statusSpan.classList.remove('idle');
+        statusSpan.classList.add('active');
+        statusSpan.style.color = '#00ff00';
+        if (indicator) {
+          indicator.classList.remove('idle', 'disabled');
+          indicator.classList.add('active');
+        }
+      } else if (status.lastActiveTime) {
+        const secondsAgo = Math.floor(lastActiveMs / 1000);
+        statusSpan.textContent = `⏱️ IDLE (${secondsAgo}s ago)`;
+        statusSpan.classList.remove('active');
+        statusSpan.classList.add('idle');
+        statusSpan.style.color = '#ffaa00';
+        if (indicator) {
+          indicator.classList.remove('active', 'disabled');
+          indicator.classList.add('idle');
+        }
+      } else {
+        statusSpan.textContent = '⚪ WAITING';
+        statusSpan.style.color = '#ffaa00';
+        if (indicator) {
+          indicator.classList.remove('active', 'disabled');
+          indicator.classList.add('idle');
+        }
+      }
+      
+      // Update mode
+      modeSpan.textContent = status.rescueMode ? '🚨 RESCUE MODE' : '🤖 AUTO-MAINTAIN';
+      modeSpan.style.color = status.rescueMode ? '#ff9800' : '#00bcd4';
+      
+      // Update last active time
+      if (status.lastActiveTime) {
+        const lastTime = new Date(status.lastActiveTime).toLocaleTimeString();
+        lastActiveDiv.innerHTML = `<span style="display:inline-block; width:12px; height:12px; margin-right:8px;"></span><span>Last Active: ${lastTime}</span>`;
+        lastActiveDiv.style.display = 'flex';
+      }
       
       // Update log
+      const aiLogEl = document.getElementById('aiLog');
       const logHtml = status.recentLog.map(entry => 
-        `<div style="margin:2px 0; padding:2px; background:#0f1929;">${entry.time}: ${entry.message}</div>`
+        `<div style="margin:2px 0; padding:2px; background:#0f1929; border-left:2px solid #00bcd4;">${entry.time}: ${entry.message}</div>`
       ).join('');
       aiLogEl.innerHTML = logHtml || '<div style="color:#7a8fa8;">No activity yet...</div>';
     }
@@ -754,15 +814,24 @@ if (autopilot) {
   function runAutopilot() {
     if (!autopilot || !autopilot.enabled || hasCrashed) return;
     
+    // ========== FIX: ADD PROPELLANT DATA TO CONSTRAINTS =========
+    // Create a copy of constraints with actual fuel data
+    const constraintsWithFuel = {
+      ...currentConstraints,
+      propellantRemaining: {
+        hydrazine: currentPreset.propellantRemaining.hydrazine,
+        xenon: currentPreset.propellantRemaining.xenon,
+        biprop: currentPreset.propellantRemaining.biprop
+      }
+    };
+    
     // Create callback for autopilot to fire thrusters
-    const autopilotFireThruster = (deltaV, thrusterHint) => {
-      // Respect autopilot’s requested thruster if provided
+    const autopilotFireThruster = (deltaV, thrusterHint, direction) => {
       let useElectric = thrusterHint === 'electric';
       let forceHydrazine = thrusterHint === 'hydrazine';
       let forceBiprop = thrusterHint === 'biprop';
 
       if (thrusterHint === undefined) {
-        // Original heuristic fallback
         useElectric = !autopilot.rescueMode &&
                       Math.abs(deltaV) < 5 &&
                       currentPreset.thrusters.some(t => t.type.includes('hall') || t.type.includes('ion'));
@@ -773,50 +842,67 @@ if (autopilot) {
       let propType = 'hydrazine';
 
       if (useElectric) {
-        thrusterIdx = currentPreset.thrusters.findIndex(t => t.type.includes('hall') || t.type.includes('ion'));
-        if (thrusterIdx !== -1) {
-          thruster = currentPreset.thrusters[thrusterIdx];
-          propType = 'xenon';
-        }
+        const idx = currentPreset.thrusters.findIndex(t => t.type.includes('hall') || t.type.includes('ion'));
+        if (idx !== -1) { thrusterIdx = idx; thruster = currentPreset.thrusters[idx]; propType = 'xenon'; }
       } else if (forceBiprop) {
         const idx = currentPreset.thrusters.findIndex(t => t.type === 'biprop_MMHMHN');
-        if (idx !== -1) {
-          thrusterIdx = idx;
-          thruster = currentPreset.thrusters[idx];
-          propType = 'biprop';
-        }
+        if (idx !== -1) { thrusterIdx = idx; thruster = currentPreset.thrusters[idx]; propType = 'biprop'; }
       } else if (forceHydrazine || currentPreset.propellantRemaining.hydrazine > 0) {
         const idx = currentPreset.thrusters.findIndex(t => t.type === 'chemical_monoprop');
-        if (idx !== -1) {
-          thrusterIdx = idx;
-          thruster = currentPreset.thrusters[idx];
-          propType = 'hydrazine';
-        }
+        if (idx !== -1) { thrusterIdx = idx; thruster = currentPreset.thrusters[idx]; propType = 'hydrazine'; }
       } else if (currentPreset.propellantRemaining.biprop > 0) {
         const idx = currentPreset.thrusters.findIndex(t => t.type === 'biprop_MMHMHN');
-        if (idx !== -1) {
-          thrusterIdx = idx;
-          thruster = currentPreset.thrusters[idx];
-          propType = 'biprop';
-        }
+        if (idx !== -1) { thrusterIdx = idx; thruster = currentPreset.thrusters[idx]; propType = 'biprop'; }
       }
 
-      // Check if we have enough fuel before firing
       const available = currentPreset.propellantRemaining[propType] || 0;
       if (available <= 0) {
-        autopilot.rescueMode = true; // Out of fuel - go into rescue mode
+        autopilot.rescueMode = true;
         autopilot.logMessage(`⚠️ OUT OF ${propType.toUpperCase()}! Autopilot cannot correct orbit.`);
         return;
       }
 
-      // Fire the thruster using the PROPER function that consumes fuel
-      fireThruster(thrusterIdx, deltaV, thruster, propType);
+      fireThruster(thrusterIdx, deltaV, thruster, propType, direction);
     };
     
-    // Run autopilot update
+    // Get orbital state for mission sequencer
+    const constraintCheck = checkOrbitConstraints();
+    const sma = constraintCheck.semiMajorAxis;
+    const ecc = constraintCheck.eccentricity;
+    const trueAnomaly = constraintCheck.trueAnomaly;
+    
+    // ========== CHECK MISSION COMPLETION ==========
+    const activeMission = autopilot.missionSequencer.getActiveMission();
+    if (activeMission && autopilot.missionSequencer.checkMissionComplete(constraintCheck.altitude, sma, ecc, activeMission)) {
+      autopilot.logMessage(`✅ MISSION COMPLETE: ${activeMission.description}`);
+      autopilot.missionSequencer.completeMission();
+    }
+    
+    // ========== GET NEXT MISSION BURN ==========
+    const missionBurn = autopilot.missionSequencer.getNextBurn(missionElapsedSeconds, state, sma, ecc, trueAnomaly);
+    if (missionBurn && missionElapsedSeconds - autopilot.lastBurnTime > 120) {
+      // Convert direction string to unit vector
+      let dirVec = { x: 0, y: 0 };
+      const r = Math.hypot(state.pos.x, state.pos.y);
+      const radialUnit = { x: state.pos.x / r, y: state.pos.y / r };
+      const progradeUnit = { x: -radialUnit.y, y: radialUnit.x };
+      const retrogradeUnit = { x: -progradeUnit.x, y: -progradeUnit.y };
+      
+      if (missionBurn.direction === 'prograde') {
+        dirVec = progradeUnit;
+      } else if (missionBurn.direction === 'retrograde') {
+        dirVec = retrogradeUnit;
+      } else if (missionBurn.direction === 'radial') {
+        dirVec = radialUnit;
+      }
+      
+      autopilot.queueBurn(missionBurn.deltaV, dirVec, missionBurn.reason, 'chemical');
+    }
+    
+    // Run standard autopilot update
     autopilot.update(
       state, 
-      currentConstraints, 
+      constraintsWithFuel,  // ← NOW INCLUDES propellantRemaining!
       getCurrentMass(), 
       missionElapsedSeconds,
       autopilotFireThruster
@@ -825,6 +911,99 @@ if (autopilot) {
     updateAutopilotDisplay();
   }
 }
+
+// ========== MISSION PLANNER INTEGRATION ==========
+function createMission() {
+  const altInput = document.getElementById('missionAltInput').value;
+  const eccInput = document.getElementById('missionEccInput').value;
+  const missionType = document.getElementById('missionTypeSelect').value;
+
+  const mission = {
+    type: missionType,
+    targetAlt: Number(altInput),
+    targetEcc: Number(eccInput),
+    description: `${missionType}: ${altInput} km, e=${eccInput}`,
+    priority: 1,
+    createdAt: missionElapsedSeconds,
+    status: 'queued'
+  };
+
+  if (autopilot && autopilot.missionSequencer) {
+    autopilot.missionSequencer.addMission(mission);
+    updateMissionUI();
+    autopilot.logMessage(`📋 Mission added: ${mission.description}`);
+  }
+}
+
+function clearMissions() {
+  if (autopilot && autopilot.missionSequencer) {
+    autopilot.missionSequencer.missionPlan = [];
+    autopilot.missionSequencer.currentMissionIdx = 0;
+    autopilot.missionSequencer.activeMission = null;
+    updateMissionUI();
+    autopilot.logMessage('📋 Mission queue cleared');
+  }
+}
+
+function updateMissionUI() {
+  const activeLabel = document.getElementById('activeMissionLabel');
+  const missionSteps = document.getElementById('missionSteps');
+  const missionList = document.getElementById('missionList');
+
+  if (!autopilot || !autopilot.missionSequencer) return;
+
+  const active = autopilot.missionSequencer.getActiveMission();
+  if (active) {
+    activeLabel.textContent = active.description;
+    activeLabel.style.color = '#4caf50';
+    
+    const phaseText = autopilot.missionSequencer.missionPhase || 'planning';
+    const phaseIcon = {
+      'planning': '📋',
+      'transfer': '🚀',
+      'circularize': '🔄',
+      'complete': '✅'
+    }[phaseText] || '❓';
+    
+    missionSteps.innerHTML = `
+      <div style="background:#0f1f3a; padding:3px; margin:2px 0; border-left:3px solid #4caf50;">
+        <strong>Target:</strong> ${active.targetAlt} km, e=${active.targetEcc.toFixed(4)}<br>
+        <strong>Type:</strong> ${active.type}<br>
+        <strong>Phase:</strong> ${phaseIcon} ${phaseText}<br>
+        <strong>Status:</strong> Active
+      </div>
+    `;
+  } else {
+    activeLabel.textContent = 'None';
+    activeLabel.style.color = '#9fb4d6';
+    missionSteps.innerHTML = '<div style="color:#7a8fa8;">No active mission</div>';
+  }
+
+  // Render mission queue
+  const queue = autopilot.missionSequencer.missionPlan || [];
+  if (queue.length === 0) {
+    missionList.innerHTML = '<div style="color:#7a8fa8;">Queue empty</div>';
+  } else {
+    missionList.innerHTML = queue.map((m, i) => `
+      <div style="padding:2px; margin:2px 0; border-left:2px solid #ffb347; background:#0f1f3a;">
+        <div><strong>${i + 1}.</strong> ${m.type}</div>
+        <div style="font-size:0.6rem; color:#7a8fa8;">${m.targetAlt}km, e=${m.targetEcc.toFixed(4)}</div>
+        <button onclick="removeMission(${i})" style="font-size:0.6rem; padding:1px 4px; background:#1a2a44; color:#ff9800; border:1px solid #304269; cursor:pointer;">Remove</button>
+      </div>
+    `).join('');
+  }
+}
+
+function removeMission(idx) {
+  if (autopilot && autopilot.missionSequencer && autopilot.missionSequencer.missionPlan[idx]) {
+    autopilot.missionSequencer.missionPlan.splice(idx, 1);
+    updateMissionUI();
+    autopilot.logMessage(`📋 Mission ${idx + 1} removed`);
+  }
+}
+
+// Call updateMissionUI periodically
+setInterval(updateMissionUI, 1000);
 
 function draw() {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -1059,6 +1238,82 @@ function renderLoop(now) {
     }
   }
   
+  // ========== UPDATE AUTOPILOT DISPLAY EVERY FRAME ==========
+  if (autopilot) {
+    const status = autopilot.getStatus();
+    
+    // Update status indicator and text
+    const statusSpan = document.getElementById('apStatus');
+    const modeSpan = document.getElementById('apMode');
+    const lastActiveDiv = document.getElementById('apLastActive');
+    const indicator = document.querySelector('.ai-active-indicator');
+    
+    if (!status.enabled) {
+      // Autopilot disabled
+      statusSpan.textContent = 'STANDBY';
+      statusSpan.classList.remove('active', 'idle');
+      statusSpan.style.color = '#9fb4d6';
+      modeSpan.textContent = '—';
+      modeSpan.style.color = '#7a8fa8';
+      if (indicator) {
+        indicator.classList.remove('active', 'idle');
+        indicator.classList.add('disabled');
+      }
+      lastActiveDiv.style.display = 'none';
+    } else {
+      // Autopilot enabled - check if recently active
+      const now = Date.now();
+      const lastActiveMs = status.lastActiveTime ? now - status.lastActiveTime : null;
+      const isRecentlyActive = lastActiveMs && lastActiveMs < 5000; // Within last 5 seconds
+      
+      if (isRecentlyActive) {
+        statusSpan.textContent = '🟢 ACTIVE';
+        statusSpan.classList.remove('idle');
+        statusSpan.classList.add('active');
+        statusSpan.style.color = '#00ff00';
+        if (indicator) {
+          indicator.classList.remove('idle', 'disabled');
+          indicator.classList.add('active');
+        }
+      } else if (status.lastActiveTime) {
+        const secondsAgo = Math.floor(lastActiveMs / 1000);
+        statusSpan.textContent = `⏱️ IDLE (${secondsAgo}s ago)`;
+        statusSpan.classList.remove('active');
+        statusSpan.classList.add('idle');
+        statusSpan.style.color = '#ffaa00';
+        if (indicator) {
+          indicator.classList.remove('active', 'disabled');
+          indicator.classList.add('idle');
+        }
+      } else {
+        statusSpan.textContent = '⚪ WAITING';
+        statusSpan.style.color = '#ffaa00';
+        if (indicator) {
+          indicator.classList.remove('active', 'disabled');
+          indicator.classList.add('idle');
+        }
+      }
+      
+      // Update mode
+      modeSpan.textContent = status.rescueMode ? '🚨 RESCUE MODE' : '🤖 AUTO-MAINTAIN';
+      modeSpan.style.color = status.rescueMode ? '#ff9800' : '#00bcd4';
+      
+      // Update last active time
+      if (status.lastActiveTime) {
+        const lastTime = new Date(status.lastActiveTime).toLocaleTimeString();
+        lastActiveDiv.innerHTML = `<span style="display:inline-block; width:12px; height:12px; margin-right:8px;"></span><span>Last Active: ${lastTime}</span>`;
+        lastActiveDiv.style.display = 'flex';
+      }
+      
+      // Update log
+      const aiLogEl = document.getElementById('aiLog');
+      const logHtml = status.recentLog.map(entry => 
+        `<div style="margin:2px 0; padding:2px; background:#0f1929; border-left:2px solid #00bcd4;">${entry.time}: ${entry.message}</div>`
+      ).join('');
+      aiLogEl.innerHTML = logHtml || '<div style="color:#7a8fa8;">No activity yet...</div>';
+    }
+  }
+  
   requestAnimationFrame(renderLoop);
 }
 
@@ -1290,7 +1545,7 @@ function createThrusterButtons() {
   });
 }
 
-function fireThruster(thrusterIdx, dv, thruster, propType) {
+function fireThruster(thrusterIdx, dv, thruster, propType, direction) {
   // Prevent burns if crashed
   if (hasCrashed) {
     console.warn('Cannot fire thrusters - satellite has crashed!');
@@ -1299,6 +1554,16 @@ function fireThruster(thrusterIdx, dv, thruster, propType) {
   
   const speed = Math.hypot(state.vel.x, state.vel.y) || 1;
   
+  // Determine unit vector to apply dv along:
+  let dirUnit = null;
+  if (direction && typeof direction.x === 'number' && typeof direction.y === 'number') {
+    const m = Math.hypot(direction.x, direction.y) || 1;
+    dirUnit = { x: direction.x / m, y: direction.y / m };
+  } else {
+    // fallback: along current velocity (legacy behavior)
+    dirUnit = { x: state.vel.x / speed, y: state.vel.y / speed };
+  }
+
   // Check if this is an electric thruster
   const isElectric = thruster.type.includes('hall') || thruster.type.includes('ion');
   
@@ -1415,17 +1680,16 @@ function fireThruster(thrusterIdx, dv, thruster, propType) {
     }, 3000);
   }
   
-  // Apply delta-v along velocity vector
-  state.vel.x += (state.vel.x / speed) * dv;
-  state.vel.y += (state.vel.y / speed) * dv;
-  
+  // APPLY delta-v along dirUnit:
+  state.vel.x += dirUnit.x * dv;
+  state.vel.y += dirUnit.y * dv;
+
   // Log the burn
   const burnAmount = Math.abs(dv);
-  const burnType = isElectric ? 'electric' : 'chemical';
+  const burnType = (thruster.type.includes('hall') || thruster.type.includes('ion')) ? 'electric' : 'chemical';
   logBurn({ amount: burnAmount, type: burnType, time: missionElapsedSeconds });
 }
 
-// ...existing code for sunlight and power management...
 function updateSunlightStatus() {
   // FIXED sun position at +X direction (infinite distance)
   // Sun does NOT rotate - it's fixed in space

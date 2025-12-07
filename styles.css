@@ -289,9 +289,52 @@ button:hover {
   accent-color: #00bcd4;
 }
 
+/* AI Active Indicator Light */
+.ai-active-indicator {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  margin-right: 8px;
+  background: #333;
+  transition: background 0.3s;
+  vertical-align: middle;
+}
+
+.ai-active-indicator.active {
+  background: #00ff00;
+  box-shadow: 0 0 8px #00ff00;
+  animation: pulse-green 0.5s infinite alternate;
+}
+
+.ai-active-indicator.idle {
+  background: #ffaa00;
+  box-shadow: 0 0 6px #ffaa00;
+}
+
+.ai-active-indicator.disabled {
+  background: #555;
+}
+
+@keyframes pulse-green {
+  from { box-shadow: 0 0 4px #00ff00; }
+  to { box-shadow: 0 0 12px #00ff00; }
+}
+
 #apStatus {
   font-weight: bold;
   color: #9fb4d6;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+#apStatus.active {
+  color: #00ff00;
+}
+
+#apStatus.idle {
+  color: #ffaa00;
 }
 
 #apMode {
@@ -303,7 +346,74 @@ button:hover {
   font-size: 0.8rem; 
 }
 
-/* Mobile adjustments - only apply when necessary */
+#missionPanel {
+  animation: slideIn 0.3s ease-out;
+}
+
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateX(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+#missionPanel input,
+#missionPanel select {
+  background: #0f1f3a;
+  border: 1px solid #304269;
+  color: #eaf2ff;
+  border-radius: 4px;
+  padding: 4px;
+  font-size: 0.75rem;
+}
+
+#missionPanel input:focus,
+#missionPanel select:focus {
+  outline: none;
+  border-color: #00bcd4;
+  box-shadow: 0 0 8px rgba(0, 188, 212, 0.2);
+}
+
+#missionPanel button {
+  padding: 8px;
+  background: #1e2a44;
+  color: #4caf50;
+  border: 1px solid #304269;
+  border-radius: 4px;
+  cursor: pointer;
+  font-weight: bold;
+  font-size: 0.75rem;
+  transition: all 0.2s;
+}
+
+#missionPanel button:hover {
+  background: #2b3c62;
+  border-color: #4caf50;
+  color: #66bb6a;
+}
+
+#missionList {
+  font-size: 0.65rem;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+/* Responsive adjustments */
+@media (max-width: 1200px) {
+  #missionPanel {
+    width: 250px;
+  }
+  
+  #sidebar {
+    width: 250px;
+  }
+}
+
 @media (max-width: 1024px) {
   #layout {
     flex-direction: column;
