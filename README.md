@@ -2,6 +2,8 @@
 
 An interactive **realistic satellite orbit simulator** with real-world physics, propulsion systems, orbital constraints, and a **NASA-grade AI autopilot** that controls 4 degrees of freedom (the maximum possible in 2D).
 
+https://acolyer13.github.io/orbit-project/
+
 ---
 
 ## 📋 Table of Contents
