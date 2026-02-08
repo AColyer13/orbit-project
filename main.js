@@ -373,9 +373,15 @@ function setOrbit(altKm) {
   updateBurnLog();
   updateProjection();
   createThrusterButtons();
+  
+  // Update default mission for new orbit
+  createDefaultMission();
 }
 
 setOrbit(400);
+
+// Create default mission on startup
+createDefaultMission();
 
 function applyThrust(dir) {
   if (dir === 'up') thrust.y = -thrustAccel;
@@ -935,6 +941,29 @@ function createMission() {
   }
 }
 
+function createDefaultMission() {
+  if (autopilot && autopilot.missionSequencer) {
+    // Clear existing missions first
+    autopilot.missionSequencer.missionPlan = [];
+    autopilot.missionSequencer.currentMissionIdx = 0;
+    autopilot.missionSequencer.activeMission = null;
+    
+    const mission = {
+      type: 'maintain-orbit',
+      targetAlt: currentAltKm,
+      targetEcc: 0.0001,
+      description: `Station-keeping: Maintain ${currentAltKm} km orbit`,
+      priority: 1,
+      createdAt: missionElapsedSeconds,
+      status: 'active'
+    };
+
+    autopilot.missionSequencer.addMission(mission);
+    updateMissionUI();
+    autopilot.logMessage(`📋 Default mission: ${mission.description}`);
+  }
+}
+
 function clearMissions() {
   if (autopilot && autopilot.missionSequencer) {
     autopilot.missionSequencer.missionPlan = [];
@@ -965,10 +994,20 @@ function updateMissionUI() {
       'complete': '✅'
     }[phaseText] || '❓';
     
+    const typeDisplay = {
+      'maintain-orbit': 'Station Keeping',
+      'circularize': 'Circularize Orbit',
+      'raise-altitude': 'Raise Altitude',
+      'lower-altitude': 'Lower Altitude',
+      'change-ecc': 'Change Eccentricity',
+      'hohmann': 'Hohmann Transfer',
+      'escape': 'Escape Trajectory'
+    }[active.type] || active.type;
+    
     missionSteps.innerHTML = `
       <div style="background:#0f1f3a; padding:3px; margin:2px 0; border-left:3px solid #4caf50;">
         <strong>Target:</strong> ${active.targetAlt} km, e=${active.targetEcc.toFixed(4)}<br>
-        <strong>Type:</strong> ${active.type}<br>
+        <strong>Type:</strong> ${typeDisplay}<br>
         <strong>Phase:</strong> ${phaseIcon} ${phaseText}<br>
         <strong>Status:</strong> Active
       </div>

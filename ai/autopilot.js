@@ -57,8 +57,13 @@ class MissionSequencer {
   }
 
   addMission(mission) {
+    // If current mission is maintain-orbit, complete it when adding a new mission
+    if (this.activeMission && this.activeMission.type === 'maintain-orbit') {
+      this.completeMission();
+    }
+    
     this.missionPlan.push(mission);
-    if (!this.activeMission && this.missionPlan.length === 1) {
+    if (!this.activeMission) {
       this.activeMission = mission;
       this.missionPhase = 'planning';
     }
@@ -74,6 +79,9 @@ class MissionSequencer {
 
   checkMissionComplete(currentAlt, currentSMA, currentEcc, mission) {
     if (!mission) return false;
+    
+    // Maintain-orbit missions never complete automatically
+    if (mission.type === 'maintain-orbit') return false;
     
     const altError = Math.abs(currentAlt - mission.targetAlt);
     const eccError = Math.abs(currentEcc - mission.targetEcc);
@@ -103,6 +111,10 @@ class MissionSequencer {
     if (!this.activeMission) return null;
     
     const mission = this.activeMission;
+    
+    // Maintain-orbit missions don't require specific burns - autopilot handles maintenance
+    if (mission.type === 'maintain-orbit') return null;
+    
     const r = Math.hypot(state.pos.x, state.pos.y);
     const earthRadius = 6371000;
     const currentAlt = (r - earthRadius) / 1000;
